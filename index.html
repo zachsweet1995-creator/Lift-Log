@@ -34,8 +34,17 @@
 .meal-results{max-height:325px;overflow-y:auto;border:1px solid #344951;border-radius:12px}.meal-choice{display:flex;align-items:center;justify-content:space-between;gap:9px;padding:12px;border-bottom:1px solid #314650}.meal-choice:last-child{border:0}.meal-choice div{min-width:0}.meal-choice strong{display:block;color:#e9f5f1;font-size:13px;line-height:1.35}.meal-choice small{display:block;color:#aabfc4;font-size:11px;margin-top:4px;line-height:1.35}.meal-choice button{flex-shrink:0}.recipe-row{display:grid;grid-template-columns:minmax(0,1fr) 95px;gap:9px;margin:12px 0}.v4-macro-row{justify-content:flex-start;margin-top:13px}
 @media(max-width:500px){.home-v4-actions .btn{flex:1}.rest-check{width:100%;margin-left:0}.v4-settools{padding-left:22px}.v4-settools .btn{font-size:11px}.snapshot-pill strong{font-size:20px}.meal-choice .btn{padding:8px 10px}}
 
+
+/* v5 weekly training frequency (Mon–Sun) */
+.lift-weekly{background:linear-gradient(125deg,#213a37,#1a2e36);border:1px solid #416353;border-radius:15px;padding:14px;margin:0 0 15px;}
+.lift-weekly>strong{font-size:11px;letter-spacing:.9px;color:#c4e7d4}.lift-week-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;margin:10px 0;}
+.lift-week-pill{border:1px solid #385c50;background:#243f3b;border-radius:10px;padding:11px 8px;display:flex;align-items:center;justify-content:space-between;gap:6px;flex-wrap:wrap}.lift-week-pill span{font-size:11px;color:#c3dcda}.lift-week-pill b{font-size:17px;color:var(--lime);white-space:nowrap}.lift-weekly .small-print{margin:7px 0 0;}
+@media(max-width:540px){.lift-week-grid{grid-template-columns:1fr}.lift-week-pill{flex-wrap:nowrap}.lift-week-pill b{font-size:15px}}
+
+/* LiftLog v6: optional Saturday flex focus */
+.saturday-flex-panel{background:linear-gradient(125deg,#2d3b34,#1c3035);border:1px solid #55705a;border-radius:17px;padding:15px;margin:0 0 16px}.saturday-flex-panel .section-heading{margin-bottom:7px}.saturday-flex-panel h3{font-size:15px;margin:0}.saturday-flex-panel .helper{margin:6px 0 14px}.saturday-flex-panel .field{max-width:460px}.saturday-flex-panel .btn{border-color:#83a67b}.lift-week-grid{grid-template-columns:repeat(4,minmax(0,1fr))}@media(max-width:540px){.lift-week-grid{grid-template-columns:1fr}}
 </style>
-  <title>LiftLog v4 · Training & Nutrition</title>
+  <title>LiftLog v6 · Saturday Flex</title>
 </head>
 <body>
   <div id="app">
@@ -310,23 +319,109 @@ function positiveNumber(v){if(v===''||v===null||v===undefined)return null;const 
 function repNumber(v){const z=positiveNumber(v);return z!==null&&Number.isInteger(z)&&z<=100?z:null;}
 function setTargetStatus(s){if(s.kind==='warmup')return 'ungraded';const gw=positiveNumber(s.assignedWeight),gr=repNumber(s.assignedReps),w=positiveNumber(s.weight),r=repNumber(s.reps);const goalText=String(s.assignedWeight||'').trim().toLowerCase(),actualText=String(s.weight||'').trim().toLowerCase();if(!goalText||gr===null)return 'ungraded';if(!actualText||r===null)return 'incomplete';if(gw===null||w===null)return actualText===goalText?(r>=gr?'hit':'missed'):'ungraded';return w>=gw&&r>=gr?'hit':'missed';}
 function sessionRating(day){const states=(day.exercises||[]).flatMap(e=>(e.sets||[]).filter(s=>s.kind!=='warmup').map(setTargetStatus));const graded=states.filter(s=>s!=='ungraded');if(!graded.length)return {status:'ungraded',hits:0,total:0};const hits=graded.filter(s=>s==='hit').length;const completed=graded.filter(s=>s!=='incomplete');const status=completed.length<graded.length?'incomplete':hits===graded.length?'hit':'missed';return {status,hits,total:graded.length};}
-function nextSetGoal(prev,exerciseName){if(prev.kind==='warmup')return {weight:prev.assignedWeight||prev.weight||'',reps:prev.assignedReps||prev.reps||''};const goalW=positiveNumber(prev.assignedWeight),goalR=repNumber(prev.assignedReps);
-  const actualW=positiveNumber(prev.weight),actualR=repNumber(prev.reps);
-  // When a set was not actually completed, do not progress; reuse its assigned goal.
-  const rawGoal=String(prev.assignedWeight??'').trim(),rawActual=String(prev.weight??'').trim();
-  if(goalW===null&&rawGoal){const repeat=goalR??actualR??'';const met=rawActual.toLowerCase()===rawGoal.toLowerCase()&&goalR!==null&&actualR!==null&&actualR>=goalR;return {weight:rawGoal,reps:met&&goalR<12?goalR+1:repeat};}
-  if(actualW===null||actualR===null)return {weight:goalW??rawActual,reps:goalR??actualR??''};
-  if(goalW!==null&&goalR!==null){if(actualW<goalW||actualR<goalR)return {weight:goalW,reps:goalR};
-    if(goalR<12)return {weight:goalW,reps:goalR+1};
-    const choice=[...EXERCISE_LIBRARY,...(data.customExercises||[])].find(e=>canonicalKey(e.name)===canonicalKey(exerciseName));
-    const increment=choice?.equipment==='Cable'?2.5:5;
-    return {weight:Math.round((goalW+increment)*10)/10,reps:8};
-  }
-  // First coached session based on imported logs: repeat the last achieved baseline.
-  return {weight:actualW,reps:actualR};
+// LiftLog v5 — progressive overload based ONLY on previously completed actual sets.
+// Split frequency tracks completed sessions; unperformed plans never count as training.
+const LIFT_SPLIT_TARGETS = [
+  {key:'chest',label:'Chest / Triceps',times:2},
+  {key:'back',label:'Back / Biceps',times:2},
+  {key:'legs',label:'Legs / Shoulders',times:1},
+  {key:'flex',label:'Saturday Flex (optional)',times:1}
+];
+const SATURDAY_SPLIT='Saturday Flex / Core + Shoulders';
+const SATURDAY_BASE=['Cable lateral raises','Seated machine shoulder press','Seated ab machine','Pallof press'];
+const SATURDAY_FOCUS={
+ 'Balanced':['Chest press machine','Seated cable row'],
+ 'Chest / Triceps':['Incline dumbbell press','Rope triceps pushdown'],
+ 'Back / Biceps':['Lat pulldown','Cable biceps curl'],
+ 'Arms':['Rope triceps pushdown','Dumbbell biceps curl'],
+ 'Legs':['Leg press','Seated leg curl'],
+ 'Core / Shoulders':[]
+};
+function liftIsFlexSplit(split){return String(split||'')===SATURDAY_SPLIT;}
+function liftSplitGroup(split){const v=String(split||'').toLowerCase();if(liftIsFlexSplit(split))return 'flex';if(v.includes('leg'))return 'legs';if(v.includes('chest'))return 'chest';if(v.includes('back')&&v.includes('bicep'))return 'back';return '';}
+function liftWeekStart(date){const d=new Date(date+'T12:00:00');d.setDate(d.getDate()-(d.getDay()+6)%7);return todayFromDate(d);}
+function todayFromDate(d){return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;}
+function liftHasResults(ex){return (ex?.sets||[]).some(s=>s.kind!=='warmup'&&completionForSet(s));}
+function liftCompletedDay(day){return (day?.exercises||[]).some(liftHasResults);}
+function liftWeekSummary(date=selectedDate){const start=liftWeekStart(date),counts={chest:0,back:0,legs:0,flex:0};for(const [key,day] of Object.entries(data.days)){
+  if(key<start||key>date||!liftCompletedDay(day))continue;const group=liftSplitGroup(day.split);if(group)counts[group]++;
+}return counts;}
+function liftWeekMarkup(){const counts=liftWeekSummary();return `<div class="lift-weekly"><strong>YOUR WEEKLY TRAINING FREQUENCY</strong><div class="lift-week-grid">${LIFT_SPLIT_TARGETS.map(x=>`<span class="lift-week-pill"><span>${html(x.label)}</span><b>${counts[x.key]} / ${x.times}${x.key==='flex'?' optional':''}</b></span>`).join('')}</div><p class="small-print">Monday–Sunday · completed sessions only. Chest/back 2× and legs/shoulders 1× are your regular goals. Saturday Flex is optional: core and shoulders first, with additional muscles chosen by you. It does not count as a main split session.</p></div>`;}
+function liftExerciseHistory(name,beforeDate=selectedDate){const key=canonicalKey(name),isFlex=liftIsFlexSplit(data.days[beforeDate]?.split);
+ const hits=Object.entries(data.days).filter(([date])=>date<beforeDate).sort(([a],[b])=>b.localeCompare(a)).flatMap(([date,day])=>
+  (day.exercises||[]).filter(ex=>canonicalKey(ex.name)===key&&liftHasResults(ex)).map(ex=>({date,ex,flex:liftIsFlexSplit(day.split)})));
+ // Flex days have separate progression. A lightweight Saturday session cannot lower primary-day goals.
+ if(!isFlex)return hits.filter(hit=>!hit.flex);
+ const flexHits=hits.filter(hit=>hit.flex);
+ return flexHits.length?flexHits:hits.filter(hit=>!hit.flex);
 }
-function createExerciseFromHistory(name,sets=3){const previous=latestExercise(name);if(previous?.sets?.length){const targets=previous.sets.slice(0,12).map(s=>{const goal=nextSetGoal(s,name);return {id:uid(),kind:s.kind||'working',assignedWeight:goal.weight,assignedReps:goal.reps,weight:'',reps:''};});return {id:uid(),name,notes:'',rir:'',sets:targets};}
-  return {id:uid(),name,notes:'',rir:'',sets:Array.from({length:sets},()=>({id:uid(),kind:'working',assignedWeight:'',assignedReps:8,weight:'',reps:''}))};}
+function liftLastExercise(name){return liftExerciseHistory(name)[0]?.ex||null;}
+function liftWeightStep(name){const choice=[...EXERCISE_LIBRARY,...(data.customExercises||[])].find(e=>canonicalKey(e.name)===canonicalKey(name));return choice?.equipment==='Cable'?2.5:5;}
+function liftNumber(v){return positiveNumber(v);}
+function liftTargetMet(s){if(!completionForSet(s))return false;const actualRep=repNumber(s.reps),wantRep=repNumber(s.assignedReps),goalWeight=String(s.assignedWeight??'').trim(),actualWeight=String(s.weight??'').trim();
+ if(wantRep!==null&&actualRep<wantRep)return false;
+ if(goalWeight){const numeric=liftNumber(goalWeight),got=liftNumber(actualWeight);return numeric!==null&&got!==null?got>=numeric:actualWeight.toLowerCase()===goalWeight.toLowerCase();}
+ return true;}
+// Some imported historic pyramids start with a lighter, high-rep warm-up without a kind tag.
+// This rule influences NEW goals only; historic records are never relabeled.
+function liftInferredWarmup(sets,i){const s=sets[i];if(s?.kind==='warmup')return true;if(i!==0||sets.length<3||s?.kind==='failure')return false;
+ const vals=sets.map(v=>liftNumber(v.weight));const max=Math.max(...vals.filter(x=>x!==null));return vals[i]!==null&&max>0&&vals[i]<max*0.8&&repNumber(s.reps)>=12&&sets.slice(1).filter(z=>liftNumber(z.weight)>vals[i]&&repNumber(z.reps)>=6).length>=2;
+}
+// Double progression: improve reps at the same weight, then add a small load increment
+// only after ALL working sets at their respective weights reached 12 reps.
+function liftGoalsFromHistory(name,prior,older=null){const src=(prior?.sets||[]).slice(0,12),work=src.filter((s,i)=>!liftInferredWarmup(src,i));const complete=work.filter(completionForSet);
+ const canAddWeight=work.length>0&&complete.length===work.length&&work.every(s=>repNumber(s.reps)>=12&&liftTargetMet(s));
+ return src.map((s,i)=>{
+  const kind=liftInferredWarmup(src,i)?'warmup':s.kind||'working';const actualWeight=String(s.weight??'').trim(),actualReps=repNumber(s.reps);
+  const goalWeight=String(s.assignedWeight??'').trim(),goalReps=repNumber(s.assignedReps),weight=goalWeight||actualWeight;
+  if(kind==='warmup')return {kind,weight:actualWeight||goalWeight,reps:actualReps??goalReps??''};
+  // Uncompleted rows keep their old goals; they are NOT treated as an achievement.
+  if(!completionForSet(s))return {kind,weight,reps:goalReps??8};
+  const hit=liftTargetMet(s);
+  if(!hit){
+    // Two consecutive misses of identical numeric targets: one cautious back-off.
+    const prev=older?.sets?.[i],sameGoal=prev&&String(prev.assignedWeight??'')===goalWeight&&repNumber(prev.assignedReps)===goalReps;
+    if(goalWeight&&liftNumber(goalWeight)!==null&&sameGoal&&!liftTargetMet(prev))
+      return {kind,weight:Math.max(liftWeightStep(name),Math.round((liftNumber(goalWeight)-liftWeightStep(name))*10)/10),reps:8};
+    return {kind,weight,reps:goalReps??actualReps??8};
+  }
+  const goalNum=liftNumber(weight),actualNum=liftNumber(actualWeight);
+  if(canAddWeight&&goalNum!==null&&actualNum!==null){return {kind,weight:Math.round((Math.max(goalNum,actualNum)+liftWeightStep(name))*10)/10,reps:8};}
+  // Non-numeric weights ('plates/side') are never converted to invented pounds.
+  const baseline=Math.max(goalReps??0,actualReps??0,8);
+  return {kind,weight:actualWeight||weight,reps:Math.min(12,baseline+1)};
+ });
+}
+function liftSuggestedTargets(name,history){if(!history.length)return null;
+ const onFlex=liftIsFlexSplit(currentDay().split),fromPrimary=onFlex&&!history[0].flex;
+ const raw=liftGoalsFromHistory(name,history[0].ex,history[1]?.ex);
+ if(!onFlex)return raw;
+ // Short supplementary day. First-time flex targets use past actual performance as reference,
+ // never a heavier auto-progression assignment. Two sets max by default.
+ const reference=(history[0].ex.sets||[]).map((s,i)=>({
+   kind:raw[i]?.kind||s.kind||'working',
+   weight:String(s.weight||s.assignedWeight||''),
+   reps:repNumber(s.reps)??repNumber(s.assignedReps)??8
+ }));
+ const sets=(fromPrimary?reference:raw).filter(x=>x.kind!=='warmup').slice(0,2);
+ return sets.length===1?[sets[0],{...sets[0]}]:sets;
+}
+// Recalculate untouched auto-goals on a future unstarted session if a NEW actual session was completed.
+function liftRefreshPlannedGoals(){const day=data.days[selectedDate];if(!day?.exercises?.length||day.exercises.some(liftHasResults))return;
+ let modified=false;for(const ex of day.exercises){const history=liftExerciseHistory(ex.name);if(!history.length)continue;
+ const latestDate=history[0].date,goals=liftSuggestedTargets(ex.name,history);
+ (ex.sets||[]).forEach((set,i)=>{if(set.autoGoal!==true||completionForSet(set)||String(set.autoFrom||'')>=latestDate||!goals[i])return;
+  set.assignedWeight=goals[i].weight;set.assignedReps=goals[i].reps;set.kind=goals[i].kind;set.autoFrom=latestDate;modified=true;
+ });}
+ if(modified)store();
+}
+// Backward-compatible helper: used for individual set target suggestions.
+function nextSetGoal(prev,exerciseName){const goals=liftGoalsFromHistory(exerciseName,{sets:[prev]});return {weight:goals[0]?.weight??'',reps:goals[0]?.reps??''};}
+function createExerciseFromHistory(name,sets=3){const history=liftExerciseHistory(name),prior=history[0]?.ex,onFlex=liftIsFlexSplit(currentDay().split);
+ if(prior?.sets?.length){const targets=liftSuggestedTargets(name,history).map(g=>({id:uid(),kind:g.kind,assignedWeight:g.weight,assignedReps:g.reps,autoGoal:true,autoFrom:history[0].date,weight:'',reps:''}));
+ return {id:uid(),name,notes:onFlex?'Optional Saturday session — choose an effort leaving 2–3 reps in reserve.':'',rir:'',sets:targets};}
+ return {id:uid(),name,notes:onFlex?'Optional Saturday session — begin light and adjust effort.':'',rir:'',sets:Array.from({length:onFlex?2:sets},()=>({id:uid(),kind:'working',assignedWeight:'',assignedReps:onFlex?10:8,autoGoal:true,autoFrom:'',weight:'',reps:''}))};}
+
 function dayTargets(day){return day.nutritionTargets&&typeof day.nutritionTargets==='object'?day.nutritionTargets:data.targets;}
 function macroGrade(actual,target,hasData){if(!hasData||!Number.isFinite(Number(target))||Number(target)<=0)return 'none';if(Math.abs(actual-target)<0.0001)return 'hit';return actual>target?'over':'under';}
 function nutritionHasData(day){return !!day&&((day.foods||[]).length>0||!!day.nutritionOverride);}
@@ -370,7 +465,7 @@ function targetBar(label,value,target,color=''){const ratio=target?value/target:
 function navigate(tab){activeTab=tab;document.querySelectorAll('.view').forEach(el=>{el.hidden=el.id!=='view-'+tab;});document.querySelectorAll('.nav-button').forEach(el=>{const is=el.dataset.tab===tab;el.classList.toggle('active',is);if(is)el.setAttribute('aria-current','page');else el.removeAttribute('aria-current');});render();window.scrollTo({top:0,behavior:'smooth'});}
 function render(){const day=currentDay(),date=selectedDate;
 byId('datePicker').value=date;byId('dateHeading').textContent= date===today()?'Today · '+shortDate(date):shortDate(date);byId('dateLabel').textContent=datePretty(date).toUpperCase();
-if(activeTab==='home')renderHome(day);if(activeTab==='train')renderTrain(day);if(activeTab==='eat')renderEat(day);if(activeTab==='progress')renderProgress();if(activeTab==='calendar')renderCalendar();}
+if(activeTab==='home')renderHome(day);if(activeTab==='train'){liftRefreshPlannedGoals();renderTrain(day);}if(activeTab==='eat')renderEat(day);if(activeTab==='progress')renderProgress();if(activeTab==='calendar')renderCalendar();}
 function renderHome(day){const t=totals(day),tg=data.targets;const work=(day.exercises||[]).length;let hasday=!!data.days[selectedDate];const totalSets=(day.exercises||[]).reduce((s,e)=>s+(e.sets||[]).length,0);
 byId('view-home').innerHTML=`<div class="hero"><div><div class="hero-label">YOUR DAILY COMMAND CENTER</div><h2>${hasday ? (html(day.split||'Build your day')) : 'Ready to show up?'}</h2><p>${hasday?`${work} exercises · ${totalSets} sets logged · ${day.foods.length} food entries`:'Log your first workout or meal for today. Restore your private history backup to bring in older sessions and macros.'}</p></div><button class="hero-cta" data-action="go-train">+ Log workout</button></div>
 ${!Object.keys(data.days).length?`<div class="note-box" style="margin-bottom:16px">Have the separate private history file? <button class="btn small" data-action="import-json">Restore workout history</button></div>`:''}
@@ -381,7 +476,7 @@ ${dashboardProgress()}
 <div class="card margin-top"><div class="section-heading"><h2>Today's plan</h2><span class="chip gold">${work} exercises</span></div>${work?`<div class="list">${day.exercises.slice(0,3).map(e=>`<div class="item"><div class="item-head"><h3>${html(e.name)}</h3><span class="icon-text">${e.sets.length} sets</span></div></div>`).join('')}</div>`:`<div class="empty">No exercises recorded yet. Start with a split template or add your own.</div>`}<div class="action-row"><button class="btn" data-action="go-train">Open training →</button></div></div></div></div>
 ${day.notes?`<div class="note-box margin-top"><strong>Notes from this day</strong><div>${html(day.notes)}</div></div>`:''}
 <div class="footer-note">Built from your training & nutrition spreadsheet · Locally saved on this device</div>`;}
-function renderTrain(day){let sets=(day.exercises||[]).reduce((s,e)=>s+e.sets.length,0);const splitOptions=['Chest / Triceps','Back / Biceps','Legs / Shoulders','Back / Biceps + Core','Full Body','Arms','Cardio','Rest day','Other'];
+function renderTrain(day){let sets=(day.exercises||[]).reduce((s,e)=>s+e.sets.length,0);const splitOptions=['Chest / Triceps','Back / Biceps','Legs / Shoulders',SATURDAY_SPLIT,'Back / Biceps + Core','Full Body','Arms','Cardio','Rest day','Other'];
 byId('view-train').innerHTML=`<h2 class="screen-title">Lifts & workout log</h2><p class="screen-intro">Your next goals build from the previous session for each exact exercise. Tap + Save new lift to permanently add a movement to the picker.</p><div class="card"><div class="form-grid"><div class="field"><label for="splitInput">Training split</label><select id="splitInput"><option value="">Choose split</option>${splitOptions.map(s=>`<option value="${html(s)}" ${day.split===s?'selected':''}>${html(s)}</option>`).join('')}${day.split&&!splitOptions.includes(day.split)?`<option selected value="${html(day.split)}">${html(day.split)}</option>`:''}</select></div><div class="field"><label for="cardioInput">Cardio (minutes)</label><input id="cardioInput" type="number" step="1" min="0" max="1000" placeholder="e.g. 20" value="${html(day.cardio)}"></div><div class="field full"><label for="dailyNotes">Daily notes</label><textarea rows="2" id="dailyNotes" placeholder="How did today's session feel?">${html(day.notes)}</textarea></div></div><div class="toolbar"><button class="btn primary" data-action="load-template">${day.exercises.length?'Add split template':'Load split template'}</button><button class="btn" data-action="add-exercise">+ Exercise</button><button class="btn" data-action="custom-exercise">+ Save new lift</button><button class="btn" data-action="generate-goals">↗ Fill missing targets</button></div><span class="small-print">${day.exercises.length} exercises · ${sets} sets</span></div>
 ${!day.exercises.length?`<div class="empty">Choose your split and tap “Load split template,” or add an exercise manually.</div>`:day.exercises.map((e,i)=>`<div class="exercise"><div class="exercise-header"><div><h3>${html(e.name)}</h3><div class="muted">${e.sets.length} sets ${e.notes?' · '+html(e.notes):''}</div></div><button class="subtle-button" data-action="remove-exercise" data-ex="${i}" title="Remove exercise">✕</button></div><div class="set-labels"><span>SET</span><span>GOAL LB</span><span>GOAL RP</span><span>ACT LB</span><span>ACT RP</span><span></span></div>${e.sets.map((s,j)=>`<div class="set-row"><span class="set-count" title="${setTargetStatus(s)}">${j+1}${setTargetStatus(s)==='hit'?'✓':setTargetStatus(s)==='missed'?'✕':''}</span><input aria-label="Set ${j+1} assigned weight for ${html(e.name)}" data-ex="${i}" data-set="${j}" data-field="assignedWeight" value="${html(s.assignedWeight)}" placeholder="—"><input inputmode="numeric" aria-label="Set ${j+1} assigned reps" data-ex="${i}" data-set="${j}" data-field="assignedReps" value="${html(s.assignedReps)}" placeholder="—"><input aria-label="Set ${j+1} actual weight" data-ex="${i}" data-set="${j}" data-field="weight" value="${html(s.weight)}" placeholder="—"><input inputmode="numeric" aria-label="Set ${j+1} actual reps" data-ex="${i}" data-set="${j}" data-field="reps" value="${html(s.reps)}" placeholder="—"><button class="subtle-button" data-action="remove-set" data-ex="${i}" data-set="${j}" aria-label="Remove set">×</button></div>`).join('')}<div class="exercise-footer"><button class="btn small" data-action="add-set" data-ex="${i}">+ Add set</button><div class="field"><label>RIR</label><input aria-label="Reps in reserve for ${html(e.name)}" data-ex="${i}" data-exfield="rir" value="${html(e.rir)}" placeholder="0–5"></div></div></div>`).join('')}
 <div class="footer-note">RIR = reps in reserve · All entries save automatically on this device</div>`;}
@@ -406,9 +501,16 @@ function exportBackup(){download('liftlog-backup-'+today()+'.json',JSON.stringif
 function csvCell(v){const str=String(v??'');return /[",\n]/.test(str)?'"'+str.replaceAll('"','""')+'"':str;}
 function exportCSV(){const header=['Date','Bodyweight (lb)','Workout split','Cardio (min)','Calories','Protein (g)','Carbs (g)','Fat (g)','Exercise count','Food entries','Notes'];const rows=Object.entries(data.days).sort(([a],[b])=>a.localeCompare(b)).map(([date,d])=>{const t=totals(d);return [date,d.weight,d.split,d.cardio,t.calories,t.protein,t.carbs,t.fat,d.exercises.length,d.foods.length,d.notes]});download('liftlog-summary-'+today()+'.csv',[header,...rows].map(r=>r.map(csvCell).join(',')).join('\r\n'),'text/csv');toast('CSV downloaded');}
 function adjustDate(delta){const d=new Date(selectedDate+'T12:00:00');d.setDate(d.getDate()+delta);selectedDate=[d.getFullYear(),String(d.getMonth()+1).padStart(2,'0'),String(d.getDate()).padStart(2,'0')].join('-');render();}
-function addTemplate(){const day=currentDay(true);const split=day.split;const templates={'Chest / Triceps':['Plate-loaded chest press','Incline dumbbell press','Cable fly','Low-to-high cable crossover','Dips'],'Back / Biceps':['Lat pulldown','Rope cable curls','Seated cable row','Wide-grip EZ-bar cable curl','Seated lat pulldown machine','Cross-chest DB hammer curl'],'Back / Biceps + Core':['Lat pulldown','Rope cable curls','Seated cable row','Wide-grip cable curl','Seated ab machine'],'Legs / Shoulders':['Leg press','Cable lateral raises','Seated leg extensions','Deadlift machine shrugs','Hamstring curls','Seated machine shoulder press']};if(!split){toast('Choose a training split first');return;}const names=templates[split]||[];if(!names.length){toast('No preset for this split; use + Exercise');return;}let count=0;for(const name of names){if(day.exercises.some(e=>canonicalKey(e.name)===canonicalKey(name)))continue;day.exercises.push(createExerciseFromHistory(name));count++;}store();render();toast(count?`${count} exercises added with smart targets`:'Template already loaded');}
+function addTemplate(){const day=currentDay(true);const split=day.split;const templates={'Chest / Triceps':['Plate-loaded chest press','Incline dumbbell press','Cable fly','Low-to-high cable crossover','Dips'],'Back / Biceps':['Lat pulldown','Rope cable curls','Seated cable row','Wide-grip EZ-bar cable curl','Seated lat pulldown machine','Cross-chest DB hammer curl'],'Back / Biceps + Core':['Lat pulldown','Rope cable curls','Seated cable row','Wide-grip cable curl','Seated ab machine'],'Legs / Shoulders':['Leg press','Cable lateral raises','Seated leg extensions','Deadlift machine shrugs','Hamstring curls','Seated machine shoulder press'],[SATURDAY_SPLIT]:SATURDAY_BASE};if(!split){toast('Choose a training split first');return;}const names=templates[split]||[];if(!names.length){toast('No preset for this split; use + Exercise');return;}let count=0;for(const name of names){if(day.exercises.some(e=>canonicalKey(e.name)===canonicalKey(name)))continue;day.exercises.push(createExerciseFromHistory(name));count++;}store();render();toast(count?`${count} exercises added with smart targets`:'Template already loaded');}
+function addSaturdayFocus(){const day=currentDay(true);if(!liftIsFlexSplit(day.split))return toast('Select Saturday Flex first');
+ const focus=day.saturdayFocus||'Balanced',names=SATURDAY_FOCUS[focus]||[],added=[];
+ for(const name of names){if(day.exercises.some(ex=>canonicalKey(ex.name)===canonicalKey(name)))continue;
+ day.exercises.push(createExerciseFromHistory(name));added.push(name);}
+ store();render();toast(added.length?`Added ${added.length} ${focus} focus lifts — edit or remove any exercise`:'Those focus lifts are already added, or no extras are selected');}
 function handleClick(event){const el=event.target.closest('[data-action]');if(!el)return;const action=el.dataset.action;const day=['quick-food','remove-food','remove-exercise','add-set','remove-set','load-template','generate-goals'].includes(action)?currentDay(true):currentDay(false);const i=Number(el.dataset.ex),j=Number(el.dataset.set),foodIndex=Number(el.dataset.food);
-if(action==='repeat-workout')return repeatLastWorkout();
+if(action==='saturday-add-focus')return addSaturdayFocus();
+ if(action==='start-next-workout')return liftStartSession();
+ if(action==='repeat-workout')return repeatLastWorkout();
 if(action==='complete-set')return oneTapComplete(i,j);
 if(action==='rest-preset')return startRestTimer(Number(el.dataset.seconds));
 if(action==='cancel-rest')return stopRestTimer();
@@ -441,7 +543,7 @@ if(action==='open-date'){selectedDate=el.dataset.date;calendarMonth=selectedDate
 if(action==='export-json')return exportBackup();if(action==='export-csv')return exportCSV();if(action==='import-json'){byId('backupFile').click();return;}
 }
 function handleChange(event){const el=event.target;if(el.id==='autoRestToggle'){data.preferences.autoRest=!!el.checked;store();return;}const day=currentDay(true);
-if(el.dataset.setkind!==undefined){const s=day.exercises[Number(el.dataset.ex)]?.sets[Number(el.dataset.set)];if(s){s.kind=el.value;store();}return;}if(el.id==='featuredLiftSelect'){data.featuredLift=el.value;store();return render();}if(el.id==='datePicker'){selectedDate=el.value||today();calendarMonth=selectedDate.slice(0,7);return render();}if(el.id==='splitInput'){day.split=el.value;store();return render();}if(el.id==='cardioInput'){day.cardio=el.value===''?'':Math.max(0,Number(el.value));store();return;}if(el.id==='dailyNotes'){day.notes=el.value;store();return;}if(el.dataset.ex!==undefined){const e=day.exercises[Number(el.dataset.ex)];if(!e)return;if(el.dataset.exfield){e[el.dataset.exfield]=el.value;}else if(el.dataset.set!==undefined){const s=e.sets[Number(el.dataset.set)];if(s&&['assignedWeight','assignedReps','weight','reps'].includes(el.dataset.field))s[el.dataset.field]=el.value;if(['weight','reps'].includes(el.dataset.field)){const num=el.closest('.set-row')?.querySelector('.set-count');if(num)num.textContent=String(Number(el.dataset.set)+1)+(setTargetStatus(s)==='hit'?'✓':setTargetStatus(s)==='missed'?'✕':'');}}store();}}
+if(el.dataset.setkind!==undefined){const s=day.exercises[Number(el.dataset.ex)]?.sets[Number(el.dataset.set)];if(s){s.kind=el.value;s.autoGoal=false;store();}return;}if(el.id==='featuredLiftSelect'){data.featuredLift=el.value;store();return render();}if(el.id==='datePicker'){selectedDate=el.value||today();calendarMonth=selectedDate.slice(0,7);return render();}if(el.id==='saturdayFocus'){day.saturdayFocus=el.value;store();return render();}if(el.id==='splitInput'){day.split=el.value;if(!day.exercises?.length&&liftSplitGroup(day.split))return liftAutostartNextWorkout();store();return render();}if(el.id==='cardioInput'){day.cardio=el.value===''?'':Math.max(0,Number(el.value));store();return;}if(el.id==='dailyNotes'){day.notes=el.value;store();return;}if(el.dataset.ex!==undefined){const e=day.exercises[Number(el.dataset.ex)];if(!e)return;if(el.dataset.exfield){e[el.dataset.exfield]=el.value;}else if(el.dataset.set!==undefined){const s=e.sets[Number(el.dataset.set)];if(s&&['assignedWeight','assignedReps','weight','reps'].includes(el.dataset.field)){s[el.dataset.field]=el.value;if(['assignedWeight','assignedReps'].includes(el.dataset.field))s.autoGoal=false;}if(['weight','reps'].includes(el.dataset.field)){const num=el.closest('.set-row')?.querySelector('.set-count');if(num)num.textContent=String(Number(el.dataset.set)+1)+(setTargetStatus(s)==='hit'?'✓':setTargetStatus(s)==='missed'?'✕':'');}}store();}}
 function handleSubmit(event){if(!['foodForm','exerciseForm','weightForm','settingsForm','mealBuilderForm','addServingForm','supersetForm'].includes(event.target.id))return;event.preventDefault();const form=event.target,fd=new FormData(form),day=currentDay(true);
 if(form.id==='mealBuilderForm')return saveRecipe(fd);
 if(form.id==='addServingForm'){const item=getCatalogItem(fd.get('source'),fd.get('key'));if(!item)return toast('Saved meal not found');const kind=String(fd.get('meal')||'Meal'),quantity=Number(fd.get('quantity'));if(addFoodRecord(item,kind,quantity))closeModal();return;}
@@ -494,11 +596,23 @@ function saveRecipe(fd){const name=String(fd.get('name')||'').trim().slice(0,90)
 function servingsModal(item,source){const key=foodKey(item.name);modal(`<h2>Add ${html(item.name)}</h2><p class="helper">One saved serving: ${fmt(item.calories)} kcal · ${fmt(item.protein,1)}g protein · ${fmt(item.carbs,1)}g carbs · ${fmt(item.fat,1)}g fat</p><form id="addServingForm"><input type="hidden" name="source" value="${html(source)}"><input type="hidden" name="key" value="${html(key)}"><div class="form-grid"><div class="field"><label>Servings</label><input name="quantity" type="number" step="0.25" min="0.25" max="20" value="1" required></div><div class="field"><label>Log as</label><select name="meal">${MEAL_KINDS.map(k=>`<option ${k===(item.meal||'Meal')?'selected':''}>${k}</option>`).join('')}</select></div></div><div class="action-row"><button class="btn primary">Add to day</button></div></form>`);}
 function copyMealsFromPast(kind=''){const keys=Object.keys(data.days).filter(d=>d<selectedDate).sort().reverse();const src=keys.map(key=>({key,foods:(data.days[key].foods||[]).filter(v=>!kind||v.meal===kind)})).find(x=>x.foods.length);if(!src){toast(`No earlier ${kind||'meals'} to copy`);return;}
  const day=currentDay(true);for(const food of src.foods)day.foods.push({...food,id:uid()});delete day.nutritionOverride;store();render();toast(`Copied ${src.foods.length} entries from ${shortDate(src.key)}`);}
-function lastSameSplitWorkout(){const split=currentDay().split;return Object.entries(data.days).filter(([date,d])=>date<selectedDate&&d.exercises?.length&&(!split||d.split===split)).sort(([a],[b])=>b.localeCompare(a))[0]||null;}
-function repeatLastWorkout(){const found=lastSameSplitWorkout();if(!found){toast('No previous matching workout to repeat yet');return;}const [date,previous]=found;const day=currentDay(true);if(day.exercises.length&&!confirm('Add exercises from the last matching workout? Existing exercises will be kept.'))return;
- if(!day.split)day.split=previous.split;const groups=new Map();let ct=0;
- for(const ex of previous.exercises){if(day.exercises.some(e=>canonicalKey(e.name)===canonicalKey(ex.name)))continue;const fresh=createExerciseFromHistory(ex.name,ex.sets?.length||3);fresh.sets=ex.sets.map((set,i)=>{const target=nextSetGoal(set,ex.name);return {id:uid(),kind:set.kind||'working',assignedWeight:target.weight||'',assignedReps:target.reps||'',weight:'',reps:''};});if(ex.supersetId){if(!groups.has(ex.supersetId))groups.set(ex.supersetId,uid());fresh.supersetId=groups.get(ex.supersetId);}day.exercises.push(fresh);ct++;}
- store();render();toast(`Loaded ${ct} exercises from ${shortDate(date)}`);}
+function lastSameSplitWorkout(){const split=currentDay().split,group=liftSplitGroup(split);const candidates=Object.entries(data.days).filter(([date,day])=>date<selectedDate&&liftCompletedDay(day)&&(!split||day.split===split||group&&liftSplitGroup(day.split)===group)).sort(([a],[b])=>b.localeCompare(a));
+ // Prefer the most recent completed matching group, rather than an empty future plan.
+ return candidates[0]||null;}
+function repeatLastWorkout(){const found=lastSameSplitWorkout();if(!found){toast('No earlier completed session for this split — choose a template');return;}
+ const [date,previous]=found,day=currentDay(true);if(day.exercises.length&&!confirm('Add missing exercises? Existing entries and goals will not be changed.'))return;
+ if(!day.split)day.split=previous.split;const groups=new Map();let added=0;
+ for(const ex of previous.exercises){if(day.exercises.some(e=>canonicalKey(e.name)===canonicalKey(ex.name)))continue;
+ const fresh=createExerciseFromHistory(ex.name,ex.sets?.length||3);if(ex.supersetId){if(!groups.has(ex.supersetId))groups.set(ex.supersetId,uid());fresh.supersetId=groups.get(ex.supersetId);}day.exercises.push(fresh);added++;}
+ if(added){store();render();toast(`Set ${added} exercises from ${shortDate(date)} — fresh goals, actual results left blank`);}else toast('All exercises are already in this workout');}
+function liftAutostartNextWorkout(){const day=currentDay(true);if(!day.split||day.exercises?.length||!liftSplitGroup(day.split))return false;
+ if(liftIsFlexSplit(day.split)){addTemplate();return true;}
+ const match=lastSameSplitWorkout();if(match){repeatLastWorkout();return true;}
+ // Fall back to the built-in equipment template until this split has actual performance history.
+ addTemplate();return true;}
+function liftStartSession(){const day=currentDay(true);if(!day.split){toast('Choose a training split first');return;}
+ if(day.exercises?.length){toast('This session is already loaded — goals and actual results are preserved');return;}
+ if(!liftAutostartNextWorkout())toast('Choose a regular split or Saturday Flex');}
 function supersetFor(ex,day=currentDay()){return (day.exercises||[]).filter(x=>ex?.supersetId&&x.supersetId===ex.supersetId);}
 function supersetOrdinal(ex,day=currentDay()){if(!ex?.supersetId)return '';const groups=[...new Set(day.exercises.filter(x=>x.supersetId).map(x=>x.supersetId))];return String.fromCharCode(65+Math.max(0,groups.indexOf(ex.supersetId)));}
 function supersetModal(index){const day=currentDay(),ex=day.exercises[index];if(!ex)return;const available=day.exercises.map((x,i)=>({x,i})).filter(row=>row.i!==index&&(!row.x.supersetId||row.x.supersetId===ex.supersetId));
@@ -522,10 +636,10 @@ function renderRestTicker(){const el=byId('restTicker');if(!el)return;const left
 function startRestTimer(seconds){if(!Number.isFinite(seconds)||seconds<=0)return;stopRestTimer();restEndsAt=Date.now()+seconds*1000;renderRestTicker();restInterval=setInterval(renderRestTicker,300);}
 function nutritionWeek(){return Object.entries(data.days).filter(([key,d])=>key<=selectedDate&&nutritionHasData(d)).sort(([a],[b])=>b.localeCompare(a)).slice(0,7).reverse().map(([date,d])=>({date,calories:totals(d).calories,protein:totals(d).protein}));}
 function v4HomeSummary(day){const rating=sessionRating(day),vals=totals(day),tg=dayTargets(day),meals=day.foods?.length||0;
- return `<div class="v4-snapshot"><div class="snapshot-pill"><span>PROTEIN</span><strong>${fmt(vals.protein,0)} / ${fmt(tg.protein)}g</strong><small class="${macroGrade(vals.protein,tg.protein,meals>0)}">${meals?macroGrade(vals.protein,tg.protein,true).toUpperCase():'NOT LOGGED'}</small></div><div class="snapshot-pill"><span>LIFT TARGETS</span><strong>${rating.hits} / ${rating.total}</strong><small>${rating.status==='ungraded'?'NO GRADED SETS':rating.status.toUpperCase()}</small></div></div><div class="home-v4-actions"><button class="btn primary" data-action="repeat-workout">↻ Repeat last workout</button><button class="btn" data-action="go-eat">+ Quick-add meal</button></div>`;
+ return `<div class="v4-snapshot"><div class="snapshot-pill"><span>PROTEIN</span><strong>${fmt(vals.protein,0)} / ${fmt(tg.protein)}g</strong><small class="${macroGrade(vals.protein,tg.protein,meals>0)}">${meals?macroGrade(vals.protein,tg.protein,true).toUpperCase():'NOT LOGGED'}</small></div><div class="snapshot-pill"><span>LIFT TARGETS</span><strong>${rating.hits} / ${rating.total}</strong><small>${rating.status==='ungraded'?'NO GRADED SETS':rating.status.toUpperCase()}</small></div></div><div class="home-v4-actions"><button class="btn primary" data-action="repeat-workout">↻ Repeat last workout</button><button class="btn" data-action="go-eat">+ Quick-add meal</button><button class="btn" data-action="chat-import">↗ Import ChatGPT</button></div>`;
 }
-function renderTrain(day){const sets=(day.exercises||[]).reduce((s,e)=>s+(e.sets||[]).length,0);const splitOptions=['Chest / Triceps','Back / Biceps','Legs / Shoulders','Back / Biceps + Core','Full Body','Arms','Cardio','Rest day','Other'];
- byId('view-train').innerHTML=`<div class="section-heading"><div><h2 class="screen-title">Lifts & workout log</h2><p class="screen-intro">Fast sets, saved supersets and targets that learn from prior sessions.</p></div><span class="chip">V4</span></div><div class="card"><div class="form-grid"><div class="field"><label for="splitInput">Training split</label><select id="splitInput"><option value="">Choose split</option>${splitOptions.map(s=>`<option value="${html(s)}" ${day.split===s?'selected':''}>${html(s)}</option>`).join('')}${day.split&&!splitOptions.includes(day.split)?`<option selected value="${html(day.split)}">${html(day.split)}</option>`:''}</select></div><div class="field"><label for="cardioInput">Cardio (minutes)</label><input id="cardioInput" type="number" min="0" max="1000" value="${html(day.cardio)}"></div><div class="field full"><label for="dailyNotes">Daily notes</label><textarea rows="2" id="dailyNotes" placeholder="Notes, soreness, how you felt">${html(day.notes)}</textarea></div></div><div class="toolbar"><button class="btn primary" data-action="repeat-workout">↻ Repeat last workout</button><button class="btn" data-action="load-template">+ Split template</button><button class="btn" data-action="add-exercise">+ Exercise</button><button class="btn" data-action="custom-exercise">+ Save lift</button><button class="btn" data-action="generate-goals">↗ Fill goals</button></div><p class="small-print">${day.exercises.length} exercises · ${sets} sets · previous results populate goals, not actual entries</p></div>
+function renderTrain(day){const sets=(day.exercises||[]).reduce((s,e)=>s+(e.sets||[]).length,0);const splitOptions=['Chest / Triceps','Back / Biceps','Legs / Shoulders',SATURDAY_SPLIT,'Back / Biceps + Core','Full Body','Arms','Cardio','Rest day','Other'];
+ byId('view-train').innerHTML=`<div class="section-heading"><div><h2 class="screen-title">Lifts & workout log</h2><p class="screen-intro">Targets grow from completed sets. Optional Saturday flex keeps core/shoulders first and never overrides main-day progression.</p></div><span class="chip">V6 · SMART PROGRESSION</span></div>${liftWeekMarkup()}${liftIsFlexSplit(day.split)?`<div class="saturday-flex-panel"><div class="section-heading"><h3>Saturday bonus · Core + Shoulders</h3><span class="chip gold">OPTIONAL</span></div><p class="helper">Start with two shoulder and two core movements. Choose extra muscles only if recovery and time allow. These lighter Saturday sets do not drive your regular chest, back, or leg targets.</p><div class="field"><label for="saturdayFocus">Additional focus (optional)</label><select id="saturdayFocus">${Object.keys(SATURDAY_FOCUS).map(k=>`<option value="${html(k)}" ${(day.saturdayFocus||'Balanced')===k?'selected':''}>${html(k)}</option>`).join('')}</select></div><div class="action-row"><button class="btn small" data-action="saturday-add-focus">+ Add selected focus lifts</button></div></div>`:""}<div class="card"><div class="form-grid"><div class="field"><label for="splitInput">Training split</label><select id="splitInput"><option value="">Choose split</option>${splitOptions.map(s=>`<option value="${html(s)}" ${day.split===s?'selected':''}>${html(s)}</option>`).join('')}${day.split&&!splitOptions.includes(day.split)?`<option selected value="${html(day.split)}">${html(day.split)}</option>`:''}</select></div><div class="field"><label for="cardioInput">Cardio (minutes)</label><input id="cardioInput" type="number" min="0" max="1000" value="${html(day.cardio)}"></div><div class="field full"><label for="dailyNotes">Daily notes</label><textarea rows="2" id="dailyNotes" placeholder="Notes, soreness, how you felt">${html(day.notes)}</textarea></div></div><div class="toolbar"><button class="btn primary" data-action="start-next-workout">↗ Generate next targets</button><button class="btn" data-action="repeat-workout">↻ Repeat last completed</button><button class="btn" data-action="chat-import">↗ Import ChatGPT workout</button><button class="btn" data-action="load-template">+ Split template</button><button class="btn" data-action="add-exercise">+ Exercise</button><button class="btn" data-action="custom-exercise">+ Save lift</button><button class="btn" data-action="generate-goals">↗ Fill goals</button></div><p class="small-print">${day.exercises.length} exercises · ${sets} sets · Unstarted automatic targets refresh after your last completed session · manual goals stay locked · actual results start blank</p></div>
  <div class="rest-bar" id="restTicker" aria-live="polite"></div><div class="rest-tools"><span>Rest timer</span>${[60,90,120].map(s=>`<button class="btn small" data-action="rest-preset" data-seconds="${s}">${s}s</button>`).join('')}<label class="rest-check"><input type="checkbox" id="autoRestToggle" ${data.preferences.autoRest?'checked':''}> Auto after working sets</label></div>
  ${(data.savedSupersets||[]).length?`<div class="card margin-top"><div class="section-heading"><h2>Saved supersets</h2><span class="chip muted">Quick load</span></div><div class="saved-pairs">${data.savedSupersets.map(p=>`<button class="btn" data-action="add-saved-superset" data-pair="${html(p.id)}">+ ${html(p.names.join(' + '))}</button>`).join('')}</div></div>`:''}
  ${!day.exercises.length?`<div class="empty">Start with “Repeat last workout”, your split template, or + Exercise.</div>`:day.exercises.map((e,i)=>{const group=supersetFor(e,day),letter=supersetOrdinal(e,day),pos=group.indexOf(e);return `<div class="exercise"><div class="exercise-header"><div>${e.supersetId?`<span class="superset-label">SUPERSET ${letter}${pos>=0?String(pos+1):''} · ${group.length} MOVEMENTS</span>`:''}<h3>${html(e.name)}</h3><div class="muted">${e.sets.length} sets${e.notes?' · '+html(e.notes):''}</div></div><button class="subtle-button" data-action="remove-exercise" data-ex="${i}" title="Remove exercise">✕</button></div><div class="v4-ex-actions"><button class="btn small" data-action="pair-exercise" data-ex="${i}">${e.supersetId?'↗ Add to superset':'⤨ Add superset'}</button>${e.supersetId?`<button class="btn small" data-action="unlink-exercise" data-ex="${i}">Unlink</button>`:''}</div><div class="set-labels"><span>SET</span><span>GOAL LB</span><span>GOAL RP</span><span>ACT LB</span><span>ACT RP</span><span></span></div>
@@ -534,7 +648,7 @@ function renderTrain(day){const sets=(day.exercises||[]).reduce((s,e)=>s+(e.sets
 }
 function renderEat(day){const t=totals(day),tg=dayTargets(day),cat=['All',...MEAL_KINDS];const week=nutritionWeek();const avgP=week.length?week.reduce((sum,r)=>sum+r.protein,0)/week.length:0;
  byId('view-eat').innerHTML=`<div class="section-heading"><div><h2 class="screen-title">Nutrition & meals</h2><p class="screen-intro">Save it once. Log it in a tap. Your favorites rise to the top.</p></div><span class="chip">V4</span></div><div class="card"><div class="section-heading"><h2>Daily intake</h2><span class="chip">${fmt(t.calories)} / ${fmt(tg.calories)} kcal</span></div><div class="macro-strip"><span><strong>${fmt(t.protein,1)}g</strong>Protein</span><span><strong>${fmt(t.carbs,1)}g</strong>Carbs</span><span><strong>${fmt(t.fat,1)}g</strong>Fat</span><span><strong>${day.foods.length}</strong>Entries</span></div><div class="nutrition-states v4-macro-row">${nutritionStatusMarkup(day)}</div>${day.nutritionOverride?`<p class="small-print">Imported daily totals; adding a meal will recalculate using individual entries.</p>`:''}</div>
- <div class="card margin-top"><div class="section-heading"><h2>Quick add</h2><span class="chip gold">Smart favorites</span></div><div class="field"><label for="mealSearch">Search your saved foods & meals</label><input id="mealSearch" placeholder="Shake, burrito, breakfast…" value="${html(mealQuery)}" autocomplete="off"></div><div class="meal-filters">${cat.map(k=>`<button class="filter-pill ${mealCategory===k?'selected':''}" data-action="filter-meals" data-kind="${html(k)}">${html(k)}</button>`).join('')}</div><div class="meal-results" id="mealResults">${mealResultMarkup()}</div><div class="toolbar margin-top"><button class="btn primary" data-action="add-food">+ Log food</button><button class="btn" data-action="create-food">+ Create food</button><button class="btn" data-action="build-meal">+ Build a meal</button></div></div>
+ <div class="card margin-top"><div class="section-heading"><h2>Quick add</h2><span class="chip gold">Smart favorites</span></div><div class="field"><label for="mealSearch">Search your saved foods & meals</label><input id="mealSearch" placeholder="Shake, burrito, breakfast…" value="${html(mealQuery)}" autocomplete="off"></div><div class="meal-filters">${cat.map(k=>`<button class="filter-pill ${mealCategory===k?'selected':''}" data-action="filter-meals" data-kind="${html(k)}">${html(k)}</button>`).join('')}</div><div class="meal-results" id="mealResults">${mealResultMarkup()}</div><div class="toolbar margin-top"><button class="btn primary" data-action="add-food">+ Log food</button><button class="btn" data-action="chat-import">↗ Import from ChatGPT</button><button class="btn" data-action="create-food">+ Create food</button><button class="btn" data-action="build-meal">+ Build a meal</button></div></div>
  <div class="card margin-top"><div class="section-heading"><h2>Fast repeat</h2><span class="chip muted">From your history</span></div><div class="toolbar"><button class="btn" data-action="copy-past-meals" data-kind="Breakfast">↻ Breakfast</button><button class="btn" data-action="copy-past-meals" data-kind="Snack">↻ Snack</button><button class="btn" data-action="copy-past-meals" data-kind="Dinner">↻ Dinner</button><button class="btn" data-action="copy-past-meals" data-kind="">Copy previous logged day</button></div></div>
  <div class="card margin-top"><div class="section-heading"><h2>Your food diary</h2><span class="chip muted">${day.foods.length} entries</span></div>${day.foods.length?`<div class="list meal-list">${day.foods.map((m,i)=>`<div class="item"><div><div class="small-print">${html(m.time||m.meal||'Meal')}${m.estimated?' · approx.':''}</div><h3>${html(m.name)}</h3><p>${fmt(m.protein,1)} P · ${fmt(m.carbs,1)} C · ${fmt(m.fat,1)} F (g)</p></div><div class="item-right"><strong>${fmt(m.calories)}</strong><small>kcal</small><div><button class="subtle-button" data-action="save-diary-food" data-food="${i}" title="Save to food library">☆</button><button class="subtle-button" data-action="edit-food" data-food="${i}" title="Edit food">✎</button><button class="subtle-button" data-action="remove-food" data-food="${i}" title="Remove food">×</button></div></div></div>`).join('')}</div>`:`<div class="empty">Nothing logged yet. Try your normal breakfast or a saved meal above.</div>`}</div>
  <div class="card margin-top"><div class="section-heading"><h2>Nutrition trends</h2><span class="chip muted">Recent logged days</span></div><div class="v4-snapshot"><div class="snapshot-pill"><span>AVG PROTEIN</span><strong>${fmt(avgP)}g</strong><small>Last ${week.length} logged day${week.length===1?'':'s'}</small></div><div class="snapshot-pill"><span>PROTEIN LEFT TODAY</span><strong>${fmt(Math.max(0,tg.protein-t.protein))}g</strong><small>Compared with target</small></div></div>${week.length?chartSvg(week.map(x=>({date:x.date,value:x.protein})),'g protein'):'<div class="empty">Log a few meals to show your trends.</div>'}</div><div class="footer-note">You can edit saved foods, portions and estimates. All data stays on this device until exported.</div>`;
@@ -542,6 +656,247 @@ function renderEat(day){const t=totals(day),tg=dayTargets(day),cat=['All',...MEA
 
 function attach(){document.querySelectorAll('[data-tab]').forEach(b=>b.addEventListener('click',()=>navigate(b.dataset.tab)));byId('settingsButton').addEventListener('click',settingsModal);byId('prevDay').addEventListener('click',()=>adjustDate(-1));byId('nextDay').addEventListener('click',()=>adjustDate(1));byId('datePicker').addEventListener('change',handleChange);document.addEventListener('click',handleClick);document.addEventListener('change',handleChange);document.addEventListener('input',event=>{if(event.target.id==='exerciseSearch')exerciseResultRows();if(event.target.id==='mealSearch'){mealQuery=event.target.value;updateMealSearch();}});document.addEventListener('submit',handleSubmit);byId('backupFile').addEventListener('change',async event=>{const file=event.target.files[0];if(!file)return;try{const text=await file.text();const newData=JSON.parse(text);if(!newData||newData.version!==1||!newData.days||!newData.targets||!Array.isArray(newData.favorites)||Object.keys(newData.days).some(k=>!/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(k)||!Array.isArray(newData.days[k].foods)||!Array.isArray(newData.days[k].exercises))){throw Error('Invalid backup file');}if(confirm('Restore this LiftLog backup? Your current phone data will be replaced.')){data=newData;data.customExercises=Array.isArray(data.customExercises)?data.customExercises:[];ensureV4();store();render();toast('Backup restored');}}catch(e){toast('This is not a valid LiftLog backup.');}event.target.value='';});byId('modal').addEventListener('click',e=>{if(e.target===byId('modal'))closeModal();});}
 attach();render();
+</script>
+<script>
+/* LiftLog ChatGPT handoff v2: local, confirmed, non-destructive imports. */
+(() => {
+  'use strict';
+  const LEGACY = 'LLMEAL1.';
+  const UNIVERSAL = 'LLLOG1.';
+  const HASH_MEAL = '#llmeal=';
+  const HASH_LOG = '#lllog=';
+  const ALLOWED = ['meal','workout_plan','workout_log','weigh_in'];
+  let pending = null;
+
+  function validDate(value) {
+    if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+    const [y,m,d] = value.split('-').map(Number), date = new Date(y,m-1,d);
+    return y>=2020 && y<=2100 && date.getFullYear()===y && date.getMonth()===m-1 && date.getDate()===d;
+  }
+  function textField(value, max, label, allowEmpty=false) {
+    if (typeof value !== 'string' || value.length>max || (!allowEmpty && !value.trim())) throw Error('Invalid '+label);
+    return value.trim();
+  }
+  function numberField(value,max,label,minimum=0) {
+    if (typeof value!=='number' || !Number.isFinite(value) || value<minimum || value>max) throw Error('Invalid '+label);
+    return value;
+  }
+  function weightField(value,label) {
+    const s=String(value===undefined || value===null ? '' : value).trim();
+    if (s.length>32 || (s && !/^[a-zA-Z0-9 .,/()+\-]+$/.test(s))) throw Error('Invalid '+label);
+    return s;
+  }
+  function repField(value,label) {
+    if (value===undefined || value===null || value==='') return '';
+    const s=String(value).trim();
+    if (!/^\d{1,3}$/.test(s) || +s<1 || +s>100) throw Error('Invalid '+label);
+    return s;
+  }
+  function normalize(raw, legacy=false) {
+    if (!raw || typeof raw!=='object' || Array.isArray(raw) || raw.v!==1) throw Error('Unknown import version');
+    const id=textField(raw.id,120,'entry ID');
+    if (!/^[A-Za-z0-9_-]{8,120}$/.test(id)) throw Error('Invalid entry ID');
+    if (!validDate(raw.date)) throw Error('Invalid date');
+    const kind=legacy?'meal':raw.kind;
+    if (!ALLOWED.includes(kind)) throw Error('Unsupported entry type');
+    const base={v:1,id,kind,date:raw.date};
+    if (kind==='meal') {
+      if (!MEAL_KINDS.includes(raw.meal)) throw Error('Invalid meal category');
+      return {...base,name:textField(raw.name,140,'food name'),meal:raw.meal,
+        calories:numberField(raw.calories,10000,'calories'),protein:numberField(raw.protein,1000,'protein'),
+        carbs:numberField(raw.carbs,1000,'carbs'),fat:numberField(raw.fat,1000,'fat'),estimated:raw.estimated!==false};
+    }
+    if (kind==='weigh_in') return {...base,weight:numberField(raw.weight,800,'bodyweight',50)};
+    const split=textField(raw.split||'',80,'training split',true);
+    if (!Array.isArray(raw.exercises) || !raw.exercises.length || raw.exercises.length>15) throw Error('Invalid exercise list');
+    const seen=new Set();
+    const exercises=raw.exercises.map(e=>{
+      if (!e || typeof e!=='object') throw Error('Invalid exercise');
+      const name=textField(e.name,100,'exercise name');
+      const key=canonicalKey(name);
+      if (seen.has(key)) throw Error('Duplicate exercise in import');
+      seen.add(key);
+      if (!Array.isArray(e.sets) || !e.sets.length || e.sets.length>12) throw Error('Invalid set list');
+      const sets=e.sets.map(set=>{
+        if (!set || typeof set!=='object') throw Error('Invalid set');
+        const setKind=set.kind===undefined?'working':set.kind;
+        if (!['working','warmup','failure'].includes(setKind)) throw Error('Invalid set kind');
+        if (kind==='workout_plan') {
+          const w=weightField(set.assignedWeight,'assigned weight'), r=repField(set.assignedReps,'assigned reps');
+          if (!w && !r) throw Error('An assigned set needs weight or reps');
+          return {kind:setKind,assignedWeight:w,assignedReps:r};
+        }
+        const w=weightField(set.weight,'logged weight'), r=repField(set.reps,'logged reps');
+        if (!w || !r) throw Error('A completed set needs weight and reps');
+        return {kind:setKind,weight:w,reps:r};
+      });
+      return {name,sets,notes:textField(e.notes||'',260,'exercise notes',true)};
+    });
+    return {...base,split,exercises};
+  }
+  function decode(input) {
+    let code=String(input||'').trim();
+    for (const [marker,prefix] of [[HASH_MEAL,LEGACY],[HASH_LOG,UNIVERSAL]]) {
+      const pos=code.indexOf(marker);
+      if (pos!==-1) { code=prefix + code.slice(pos+marker.length).split(/[&#?\s]/)[0]; break; }
+    }
+    const legacy=code.startsWith(LEGACY),universal=code.startsWith(UNIVERSAL);
+    if (!legacy && !universal) throw Error('Unrecognized import code');
+    const token=code.slice((legacy?LEGACY:UNIVERSAL).length);
+    if (!/^[A-Za-z0-9_-]{20,10000}$/.test(token)) throw Error('Invalid code format');
+    const padded=token.replace(/-/g,'+').replace(/_/g,'/')+'='.repeat((4-token.length%4)%4);
+    const bytes=Uint8Array.from(atob(padded),c=>c.charCodeAt(0));
+    return normalize(JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(bytes)),legacy);
+  }
+  function mark(obj) { return 'chatgpt:'+obj.id; }
+  function findDuplicate(obj) {
+    for (const [date,day] of Object.entries(data.days)) {
+      if ((day.foods||[]).some(f=>f.sourceKey===mark(obj))) return date;
+      if ((day.chatgptImports||[]).includes(mark(obj))) return date;
+    }
+    return null;
+  }
+  function ensureDay(snapshot,date) {
+    if (!snapshot.days[date]) snapshot.days[date]={weight:'',split:'',cardio:'',notes:'',exercises:[],foods:[],nutritionTargets:{...snapshot.targets}};
+    return snapshot.days[date];
+  }
+  function workoutChanges(day,obj) {
+    let added=0,filled=0,skipped=0;
+    const byName=new Map((day.exercises||[]).map(ex=>[canonicalKey(ex.name),ex]));
+    for (const incoming of obj.exercises) {
+      const prev=byName.get(canonicalKey(incoming.name));
+      if (!prev) {added++;continue;}
+      for (let i=0;i<incoming.sets.length;i++) {
+        const current=(prev.sets||[])[i];
+        if (!current) {filled++;continue;}
+        const s=incoming.sets[i];
+        if (obj.kind==='workout_plan') {
+          const blanks=['assignedWeight','assignedReps'].some(k=>s[k] && (current[k]===''||current[k]===undefined||current[k]===null));
+          if (blanks) filled++; else skipped++;
+        } else if (!current.weight && !current.reps) filled++; else skipped++;
+      }
+    }
+    return {added,filled,skipped};
+  }
+  function stats(obj) {
+    const day=data.days[obj.date];
+    const duplicate=findDuplicate(obj);
+    const blocked=obj.kind==='meal'&&!!day?.nutritionOverride || obj.kind==='weigh_in'&&day?.weight!==''&&day?.weight!==undefined&&day?.weight!==null;
+    const changes=(obj.kind==='workout_plan'||obj.kind==='workout_log')?workoutChanges(day||{exercises:[]},obj):null;
+    return {duplicate,blocked,changes};
+  }
+  function openInput() {
+    pending=null;
+    if (byId('modal').open) closeModal();
+    modal('<h2>Import from ChatGPT</h2>'+
+      '<p class="helper">Paste a ChatGPT code to review meals, workout targets, completed sets, or weigh-ins. Works inside your installed LiftLog app; your existing data stays on this device.</p>'+
+      '<div class="field"><label for="chatImportCode">ChatGPT code or link</label>'+
+      '<textarea id="chatImportCode" rows="4" spellcheck="false" autocapitalize="off" autocomplete="off" placeholder="Long-press here and Paste"></textarea></div>'+
+      '<div class="action-row"><button type="button" class="btn" data-action="chat-paste-clipboard">Paste clipboard</button>'+
+      '<button type="button" class="btn primary" data-action="chat-review">Review entry</button></div>'+
+      '<p class="small-print">No entry is saved until you review it and tap Save. ChatGPT cannot write directly to this phone without a cloud connection.</p>');
+  }
+  function preview(obj) {
+    pending=obj;
+    const {duplicate,blocked,changes}=stats(obj);
+    const label=({meal:'Meal',workout_plan:'Workout targets',workout_log:'Completed workout',weigh_in:'Weigh-in'})[obj.kind];
+    let details='';
+    if (obj.kind==='meal') details='<div class="card"><h3>'+html(obj.name)+'</h3><p class="helper">'+html(obj.meal)+(obj.estimated?' · estimated':'')+'</p>'+
+      '<div class="macro-strip"><span><strong>'+fmt(obj.calories,1)+'</strong>kcal</span><span><strong>'+fmt(obj.protein,1)+'g</strong>Protein</span><span><strong>'+fmt(obj.carbs,1)+'g</strong>Carbs</span><span><strong>'+fmt(obj.fat,1)+'g</strong>Fat</span></div></div>';
+    if (obj.kind==='weigh_in') details='<div class="card"><strong>'+fmt(obj.weight,1)+' lb</strong> bodyweight</div>';
+    if (changes) details='<div class="card"><p class="helper">'+html(obj.split||'Existing workout split retained')+'</p>'+
+      obj.exercises.map(ex=>'<div style="padding:7px 0;border-bottom:1px solid var(--line)"><strong>'+html(ex.name)+'</strong><small style="display:block;color:var(--muted)">'+
+      ex.sets.map(s=>obj.kind==='workout_plan'?'Goal '+html(s.assignedWeight||'—')+' × '+html(s.assignedReps||'—'):'Actual '+html(s.weight)+' × '+html(s.reps)).join(' · ')+'</small></div>').join('')+
+      '<p class="small-print">'+changes.added+' new exercises · '+changes.filled+' available set positions · '+changes.skipped+' already-filled positions unchanged</p></div>';
+    const caution=duplicate?'This exact ChatGPT entry is already saved on '+duplicate+'. It will not be duplicated.':
+      blocked?(obj.kind==='meal'?'This date has legacy summary-only nutrition totals. Reconcile them before importing a meal.':'This date already has a weigh-in. It will not be overwritten.'):
+      (changes&&data.days[obj.date]?.split&&obj.split&&data.days[obj.date].split!==obj.split?'The existing training split will be kept.':'');
+    if (byId('modal').open) closeModal();
+    modal('<h2>Review '+label+'</h2><p class="helper">'+html(datePretty(obj.date))+'</p>'+details+
+      (caution?'<p class="note-box margin-top">'+html(caution)+'</p>':'')+
+      '<div class="action-row">'+(!duplicate&&!blocked?'<button type="button" class="btn primary" data-action="chat-save">Save to LiftLog</button>':'')+
+      '<button type="button" class="btn" data-action="close-modal">Close</button></div>');
+  }
+  function save() {
+    const obj=pending;
+    if (!obj) return;
+    if (stats(obj).duplicate||stats(obj).blocked) return preview(obj);
+    const next=JSON.parse(JSON.stringify(data));
+    const day=ensureDay(next,obj.date);
+    if (!Array.isArray(day.foods)||!Array.isArray(day.exercises)) { toast('Existing daily log could not be read safely');return; }
+    if (obj.kind==='meal') {
+      day.foods.push({id:uid(),sourceKey:mark(obj),name:obj.name,meal:obj.meal,time:obj.meal,
+        calories:obj.calories,protein:obj.protein,carbs:obj.carbs,fat:obj.fat,estimated:obj.estimated});
+    } else if (obj.kind==='weigh_in') {
+      day.weight=obj.weight;
+    } else {
+      if (!day.split && obj.split) day.split=obj.split;
+      const byName=new Map(day.exercises.map(ex=>[canonicalKey(ex.name),ex]));
+      let changes=0;
+      for (const incoming of obj.exercises) {
+        const key=canonicalKey(incoming.name);
+        let ex=byName.get(key);
+        if (!ex) {
+          ex={id:uid(),sourceKey:mark(obj)+':'+key,name:incoming.name,notes:incoming.notes||'',rir:'',sets:[]};
+          day.exercises.push(ex);byName.set(key,ex);changes++;
+        }
+        if (!Array.isArray(ex.sets)) {toast('An existing exercise has invalid sets');return;}
+        for (let i=0;i<incoming.sets.length;i++) {
+          const incomingSet=incoming.sets[i];
+          const current=ex.sets[i];
+          if (!current) {
+            ex.sets.push({id:uid(),kind:incomingSet.kind,assignedWeight:obj.kind==='workout_plan'?incomingSet.assignedWeight:'',
+              assignedReps:obj.kind==='workout_plan'?incomingSet.assignedReps:'',
+              weight:obj.kind==='workout_log'?incomingSet.weight:'',reps:obj.kind==='workout_log'?incomingSet.reps:''});
+            changes++;
+          } else if (obj.kind==='workout_plan') {
+            for (const field of ['assignedWeight','assignedReps']) {
+              if ((current[field]===''||current[field]===undefined||current[field]===null)&&incomingSet[field]) {current[field]=incomingSet[field];changes++;}
+            }
+          } else if (!current.weight && !current.reps) {
+            current.weight=incomingSet.weight;current.reps=incomingSet.reps;changes++;
+          }
+        }
+      }
+      if (!changes && day.split===data.days[obj.date]?.split) {
+        toast('All these workout fields already have data. Nothing was changed.');return;
+      }
+    }
+    day.chatgptImports=Array.isArray(day.chatgptImports)?day.chatgptImports:[];
+    day.chatgptImports.push(mark(obj));
+    try {localStorage.setItem(STORAGE_KEY,JSON.stringify(next));}
+    catch(e){toast('Unable to save to this device. Download a backup and check storage.');return;}
+    data=next;selectedDate=obj.date;calendarMonth=obj.date.slice(0,7);pending=null;
+    closeModal();navigate(obj.kind==='meal'?'eat':obj.kind==='weigh_in'?'home':'train');
+    toast(labelSaved(obj.kind));
+  }
+  function labelSaved(kind){return ({meal:'Meal saved from ChatGPT',workout_plan:'Workout targets imported',workout_log:'Completed sets imported',weigh_in:'Weigh-in saved'})[kind];}
+  function readHash() {
+    let hash=window.location.hash;
+    if (!hash.startsWith(HASH_MEAL)&&!hash.startsWith(HASH_LOG)) return;
+    window.history.replaceState(null,'',window.location.pathname+window.location.search);
+    try {preview(decode(hash));}
+    catch(e){toast('Invalid ChatGPT link. Try pasting its full code.');}
+  }
+  document.addEventListener('click',async event=>{
+    const target=event.target.closest('[data-action]');if (!target) return;
+    const action=target.dataset.action;
+    if (action==='chat-import'){event.preventDefault();openInput();}
+    else if (action==='chat-review'){
+      event.preventDefault();
+      try {preview(decode(byId('chatImportCode')?.value));}
+      catch(e){toast('Invalid entry: '+(e.message||'check the ChatGPT code'));}
+    }
+    else if (action==='chat-save'){event.preventDefault();save();}
+    else if (action==='chat-paste-clipboard'){
+      event.preventDefault();
+      try {const value=await navigator.clipboard.readText();if(byId('chatImportCode'))byId('chatImportCode').value=value;}
+      catch(e){toast('Long-press the field and choose Paste.');}
+    }
+  });
+  window.addEventListener('hashchange',readHash);
+  readHash();
+})();
 </script>
 </body>
 </html>
